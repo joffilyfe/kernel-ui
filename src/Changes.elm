@@ -2,6 +2,7 @@ module Changes exposing (..)
 
 import Browser
 import Html exposing (..)
+import Html.Attributes exposing (class, classList, href)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode exposing (..)
@@ -26,6 +27,7 @@ type alias Model =
     { errorMessage : Maybe String
     , apiUrl : String
     , response : Status Response
+    , menuOpened : Bool
     }
 
 
@@ -35,26 +37,63 @@ type Status a
     | Failed
 
 
+type alias Document msg =
+    { title : String
+    , body : List (Html msg)
+    }
+
+
+{-| Display header menu
+showHeader { model }
+-}
+showHeader : Model -> Html Msg
+showHeader model =
+    header [ class "site-header bg-black" ]
+        [ nav [ class "navbar navbar-expand-lg navbar-dark bg-dark" ]
+            [ div [ class "container" ]
+                [ a [ class "navbar-brand", href "/" ] [ text "Kernel UI" ]
+                , button [ class "navbar-toggler", onClick ToggleMenuCollapse ] [ span [ class "navbar-toggler-icon" ] [] ]
+                , div
+                    [ classList
+                        [ ( "collapse", True )
+                        , ( "navbar-collapse", True )
+                        , ( "show", model.menuOpened )
+                        ]
+                    ]
+                    [ ul [ class "navbar-nav mr-auto mt-2 mt-lg-0" ] []
+                    ]
+                ]
+            ]
+        ]
+
+
 
 -- VIEW
 
 
-view : Model -> Html Msg
+view : Model -> Document Msg
 view model =
-    div []
-        [ button [ onClick FetchChangeAPI ] [ text "FetchChangeAPI" ]
-        , viewPostsOrError model
+    { title = "Home"
+    , body =
+        [ showHeader model
+        , div []
+            [ div [ class "container" ]
+                [ div [ class "row" ]
+                    [ div [ class "col-12" ]
+                        [ div []
+                            [ viewChanges model
+                            , button
+                                [ class "btn btn-secondary btn-lg btn-block"
+                                , onClick FetchChangeAPI
+                                ]
+                                [ text "Reload Changes" ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         ]
-
-
-viewPostsOrError : Model -> Html Msg
-viewPostsOrError model =
-    case model.errorMessage of
-        Just message ->
-            viewError message
-
-        Nothing ->
-            viewChanges model
+    }
 
 
 viewError : String -> Html msg
@@ -127,7 +166,8 @@ httpCommand apiUrl =
 
 
 type Msg
-    = FetchChangeAPI
+    = ToggleMenuCollapse
+    | FetchChangeAPI
     | CompletedChangesFetch (Result Http.Error Response)
 
 
@@ -151,6 +191,9 @@ update msg model =
               }
             , Cmd.none
             )
+
+        ToggleMenuCollapse ->
+            ( { model | menuOpened = not model.menuOpened }, Cmd.none )
 
 
 
@@ -189,6 +232,7 @@ init _ =
     ( { response = Loading
       , errorMessage = Nothing
       , apiUrl = apiUrl
+      , menuOpened = False
       }
     , httpCommand apiUrl
     )
@@ -196,7 +240,7 @@ init _ =
 
 main : Program () Model Msg
 main =
-    Browser.element
+    Browser.document
         { init = init
         , view = view
         , update = update
