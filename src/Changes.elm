@@ -1,9 +1,9 @@
 module Changes exposing (..)
 
 import Browser
-import Http
 import Html exposing (..)
 import Html.Events exposing (onClick)
+import Http
 import Json.Decode exposing (..)
 import Json.Decode.Pipeline exposing (optional, optionalAt, required, requiredAt)
 
@@ -15,32 +15,34 @@ type alias Change =
     }
 
 
-type alias ChangeResponse =
+type alias Response =
     { since : String
     , limit : Int
-    , results : List Change
+    , changes : List Change
     }
 
 
 type alias Model =
     { errorMessage : Maybe String
-    , response : ChangeResponse
+    , apiUrl : String
+    , response : Status Response
     }
+
+
+type Status a
+    = Loading
+    | Loaded a
+    | Failed
 
 
 
 -- VIEW
 
 
-type Msg
-    = SendHttpRequest
-    | DataReceived (Result Http.Error ChangeResponse)
-
-
 view : Model -> Html Msg
 view model =
     div []
-        [ button [ onClick SendHttpRequest ] [ text "SendHttpRequest" ]
+        [ button [ onClick FetchChangeAPI ] [ text "FetchChangeAPI" ]
         , viewPostsOrError model
         ]
 
@@ -52,7 +54,7 @@ viewPostsOrError model =
             viewError message
 
         Nothing ->
-            viewChanges model.response.results
+            viewChanges model
 
 
 viewError : String -> Html msg
@@ -60,11 +62,20 @@ viewError message =
     div [] [ text message ]
 
 
-viewChanges : List Change -> Html msg
-viewChanges changes =
-    div []
-        [ ul [] (List.map viewChange changes)
-        ]
+viewChanges : Model -> Html msg
+viewChanges model =
+    case model.response of
+        Loading ->
+            div [] [ text "Loading API changes, please wait." ]
+
+        Failed ->
+            div [] [ text "Something goes wrong, please try fetch changes again" ]
+
+        Loaded response ->
+            div []
+                [ h1 [] [ text "Changes" ]
+                , ul [] (List.map viewChange response.changes)
+                ]
 
 
 viewChange : Change -> Html msg
@@ -87,9 +98,9 @@ viewChange change =
 -- DECODERS
 
 
-changeResponseDecoder : Decoder ChangeResponse
-changeResponseDecoder =
-    Json.Decode.succeed ChangeResponse
+responseDecoder : Decoder Response
+responseDecoder =
+    Json.Decode.succeed Response
         |> required "since" string
         |> required "limit" int
         |> required "results" (list changeDecoder)
@@ -103,11 +114,11 @@ changeDecoder =
         |> optional "deleted" bool False
 
 
-httpCommand : Cmd Msg
-httpCommand =
+httpCommand : String -> Cmd Msg
+httpCommand apiUrl =
     Http.get
-        { url = "http://0.0.0.0:6543/changes"
-        , expect = Http.expectJson DataReceived changeResponseDecoder
+        { url = apiUrl
+        , expect = Http.expectJson CompletedChangesFetch responseDecoder
         }
 
 
@@ -115,21 +126,26 @@ httpCommand =
 -- UPDATE
 
 
+type Msg
+    = FetchChangeAPI
+    | CompletedChangesFetch (Result Http.Error Response)
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        SendHttpRequest ->
-            ( model, httpCommand )
+        FetchChangeAPI ->
+            ( { model | response = Loading }, httpCommand model.apiUrl )
 
-        DataReceived (Ok response) ->
+        CompletedChangesFetch (Ok response) ->
             ( { model
-                | response = response
+                | response = Loaded response
                 , errorMessage = Nothing
               }
             , Cmd.none
             )
 
-        DataReceived (Err httpError) ->
+        CompletedChangesFetch (Err httpError) ->
             ( { model
                 | errorMessage = Just (buildErrorMessage httpError)
               }
@@ -166,10 +182,15 @@ buildErrorMessage httpError =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { response = ChangeResponse "a" 500 []
+    let
+        apiUrl =
+            "http://0.0.0.0:6543/changes"
+    in
+    ( { response = Loading
       , errorMessage = Nothing
+      , apiUrl = apiUrl
       }
-    , Cmd.none
+    , httpCommand apiUrl
     )
 
 
